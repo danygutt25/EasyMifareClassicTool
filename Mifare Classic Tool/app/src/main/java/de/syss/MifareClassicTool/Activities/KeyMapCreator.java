@@ -120,6 +120,11 @@ public class KeyMapCreator extends BasicActivity {
     public final static String EXTRA_USE_KEYS_FROM_DUMP =
             "de.syss.MifareClassicTool.Activity.USE_KEYS_FROM_DUMP";
 
+    /** If true and the supplied key directory contains exactly one file,
+     * select that file automatically. Used by Easy Mode. */
+    public final static String EXTRA_AUTO_SELECT_SINGLE_KEY_FILE =
+            "de.syss.MifareClassicTool.Activity.AUTO_SELECT_SINGLE_KEY_FILE";
+
     // Output parameters.
     // For later use.
 //    public final static String EXTRA_KEY_MAP =
@@ -297,6 +302,10 @@ public class KeyMapCreator extends BasicActivity {
                 if (selectLastUsedKeyFiles && selectedFiles != null
                         && selectedFiles.contains(f.getName())) {
                     // Select file.
+                    c.setChecked(true);
+                }
+                if (keyFiles.length == 1 && getIntent().getBooleanExtra(
+                        EXTRA_AUTO_SELECT_SINGLE_KEY_FILE, false)) {
                     c.setChecked(true);
                 }
                 mKeyFilesGroup.addView(c);
