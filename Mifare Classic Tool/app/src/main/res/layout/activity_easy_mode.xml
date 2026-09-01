@@ -1,107 +1,18 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:fillViewport="true">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Easy MIFARE Classic Tool"
-            android:textAppearance="?android:attr/textAppearanceLarge"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:paddingBottom="18dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Lista de keys" />
-
-        <Spinner
-            android:id="@+id/spinnerEasyKeyFile"
-            android:layout_width="match_parent"
-            android:layout_height="48dp" />
-
-        <Button
-            android:id="@+id/buttonEasyImportKeys"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Importar lista TXT" />
-
-        <Button
-            android:id="@+id/buttonEasyRefreshKeys"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Actualizar listas de keys" />
-
-        <TextView
-            android:id="@+id/textEasyStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:paddingTop="22dp"
-            android:paddingBottom="14dp"
-            android:text="Acerca una tarjeta MIFARE Classic"
-            android:textAppearance="?android:attr/textAppearanceMedium" />
-
-        <Button
-            android:id="@+id/buttonEasyRead"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Leer tarjeta" />
-
-        <LinearLayout
-            android:id="@+id/panelEasyBalance"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:paddingTop="24dp"
-            android:paddingBottom="20dp"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SALDO ACTUAL"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/textEasyBalance"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:padding="12dp"
-                android:text="0,00 €"
-                android:textSize="36sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/textEasyBalanceTechnical"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="Sector 4" />
-
-            <Button
-                android:id="@+id/buttonEasyEditBalance"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Editar saldo de prueba" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/buttonEasyAdvanced"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="Modo avanzado (MCT)" />
-
-    </LinearLayout>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Easy MIFARE Classic Tool" android:textAppearance="?android:attr/textAppearanceLarge" android:textStyle="bold" android:gravity="center" android:paddingBottom="18dp"/>
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Lista de keys"/>
+<Spinner android:id="@+id/spinnerEasyKeyFile" android:layout_width="match_parent" android:layout_height="48dp"/>
+<Button android:id="@+id/buttonEasyImportKeys" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Importar lista TXT"/>
+<Button android:id="@+id/buttonEasyRefreshKeys" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Actualizar listas de keys"/>
+<TextView android:id="@+id/textEasyStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:paddingTop="22dp" android:paddingBottom="14dp" android:text="Acerca una tarjeta MIFARE Classic" android:textAppearance="?android:attr/textAppearanceMedium"/>
+<Button android:id="@+id/buttonEasyRead" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Leer tarjeta"/>
+<LinearLayout android:id="@+id/panelEasyBalance" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center" android:paddingTop="24dp" android:paddingBottom="20dp" android:visibility="gone">
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SALDO ACTUAL" android:textStyle="bold"/>
+<TextView android:id="@+id/textEasyBalance" android:layout_width="wrap_content" android:layout_height="wrap_content" android:padding="12dp" android:text="0,00 €" android:textSize="36sp" android:textStyle="bold"/>
+<TextView android:id="@+id/textEasyBalanceTechnical" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:text="Sector 4"/>
+<Button android:id="@+id/buttonEasyEditBalance" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Editar saldo"/>
+</LinearLayout>
+<Button android:id="@+id/buttonEasyAdvanced" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="Modo avanzado (MCT)"/>
+</LinearLayout>
 </ScrollView>
