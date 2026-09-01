@@ -41,24 +41,21 @@ import de.syss.MifareClassicTool.R;
 
 /**
  * Beginner-friendly front end that reuses MCT's existing key mapping and
- * tag reading code. The original MainMenu remains available as Advanced mode.
+ * tag read/write code. The original MainMenu remains available as Advanced mode.
  *
- * The balance parser is deliberately profile-like and read-only for physical
- * tags. The edit dialog changes only the displayed test value; no NFC write is
- * performed here.
+ * Easy Mode v2 contains one explicit laboratory profile:
+ * sector 4, blocks 0 and 1 (absolute blocks 16 and 17) are duplicate MIFARE
+ * Value Blocks containing the balance in cents.
  */
 public class EasyMode extends BasicActivity {
 
     private static final int KEY_MAP_CREATOR = 1001;
     private static final int IMPORT_KEYS = 1002;
 
-    // Default laboratory profile. These values can be changed later when the
-    // exact laboratory card layout is confirmed.
+    // Laboratory profile confirmed from the user's test card dump.
     private static final int BALANCE_SECTOR = 4;
-    private static final int BALANCE_LINE = 1; // second data line/block in sector
-    private static final int BALANCE_OFFSET = 0;
-    private static final int BALANCE_LENGTH = 2;
-    private static final boolean BALANCE_LITTLE_ENDIAN = true;
+    private static final int BALANCE_BLOCK_A = 0; // absolute block 16
+    private static final int BALANCE_BLOCK_B = 1; // absolute block 17
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Spinner keyFileSpinner;
@@ -67,8 +64,13 @@ public class EasyMode extends BasicActivity {
     private TextView technicalText;
     private LinearLayout balancePanel;
     private Button readButton;
+    private Button editButton;
     private final List<File> keyFiles = new ArrayList<>();
+
     private long displayedCents = 0;
+    private byte[] originalBlockA;
+    private byte[] originalBlockB;
+    private byte[] lastReadUid;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,6 +83,7 @@ public class EasyMode extends BasicActivity {
         technicalText = findViewById(R.id.textEasyBalanceTechnical);
         balancePanel = findViewById(R.id.panelEasyBalance);
         readButton = findViewById(R.id.buttonEasyRead);
+        editButton = findViewById(R.id.buttonEasyEditBalance);
 
         ensureFolders();
         refreshKeyFiles();
@@ -90,10 +93,8 @@ public class EasyMode extends BasicActivity {
         readButton.setOnClickListener(v -> beginEasyRead());
         findViewById(R.id.buttonEasyAdvanced).setOnClickListener(v ->
                 startActivity(new Intent(this, MainMenu.class)));
-        findViewById(R.id.buttonEasyEditBalance).setOnClickListener(v -> showTestBalanceEditor());
+        editButton.setOnClickListener(v -> showBalanceEditor());
 
-        // If Android launched this activity directly because a tag was tapped,
-        // make the tag available to MCT's existing reader code.
         Intent intent = getIntent();
         if (intent != null && NfcAdapter.ACTION_TECH_DISCOVERED.equals(intent.getAction())) {
             Common.treatAsNewTag(intent, this);
@@ -103,26 +104,17 @@ public class EasyMode extends BasicActivity {
 
     @Override
     public void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
+        super.onNewIntent(intent); // BasicActivity updates Common's active tag/UID.
         statusText.setText("Tarjeta detectada. Pulsa Leer tarjeta.");
     }
 
     private void ensureFolders() {
         File keys = Common.getFile(Common.KEYS_DIR);
-        if (!keys.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            keys.mkdirs();
-        }
+        if (!keys.exists()) keys.mkdirs();
         File dumps = Common.getFile(Common.DUMPS_DIR);
-        if (!dumps.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            dumps.mkdirs();
-        }
+        if (!dumps.exists()) dumps.mkdirs();
         File tmp = Common.getFile(Common.TMP_DIR);
-        if (!tmp.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            tmp.mkdirs();
-        }
+        if (!tmp.exists()) tmp.mkdirs();
     }
 
     private void chooseKeyTextFile() {
@@ -169,15 +161,10 @@ public class EasyMode extends BasicActivity {
     }
 
     private boolean prepareSingleKeyDirectory(File source, File targetDir) {
-        if (!targetDir.exists() && !targetDir.mkdirs()) {
-            return false;
-        }
+        if (!targetDir.exists() && !targetDir.mkdirs()) return false;
         File[] oldFiles = targetDir.listFiles();
         if (oldFiles != null) {
-            for (File old : oldFiles) {
-                //noinspection ResultOfMethodCallIgnored
-                old.delete();
-            }
+            for (File old : oldFiles) old.delete();
         }
         File target = new File(targetDir, source.getName());
         try (FileInputStream in = new FileInputStream(source);
@@ -199,12 +186,8 @@ public class EasyMode extends BasicActivity {
         }
 
         List<String> names = new ArrayList<>();
-        for (File file : keyFiles) {
-            names.add(file.getName());
-        }
-        if (names.isEmpty()) {
-            names.add("No hay listas de keys");
-        }
+        for (File file : keyFiles) names.add(file.getName());
+        if (names.isEmpty()) names.add("No hay listas de keys");
 
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item, names);
@@ -219,9 +202,7 @@ public class EasyMode extends BasicActivity {
             return;
         }
         int pos = keyFileSpinner.getSelectedItemPosition();
-        if (pos < 0 || pos >= keyFiles.size()) {
-            return;
-        }
+        if (pos < 0 || pos >= keyFiles.size()) return;
 
         File selectedKeyFile = keyFiles.get(pos);
         File easyKeysDir = new File(Common.getFile(Common.TMP_DIR), "easy-selected-keys");
@@ -231,8 +212,6 @@ public class EasyMode extends BasicActivity {
             return;
         }
 
-        // Reuse MCT's normal KeyMapCreator, but give it a directory containing
-        // only the list explicitly chosen in Easy Mode.
         Intent intent = new Intent(this, KeyMapCreator.class);
         intent.putExtra(KeyMapCreator.EXTRA_KEYS_DIR, easyKeysDir.getAbsolutePath());
         intent.putExtra(KeyMapCreator.EXTRA_AUTO_SELECT_SINGLE_KEY_FILE, true);
@@ -254,9 +233,7 @@ public class EasyMode extends BasicActivity {
             }
             return;
         }
-        if (requestCode != KEY_MAP_CREATOR) {
-            return;
-        }
+        if (requestCode != KEY_MAP_CREATOR) return;
         if (resultCode != Activity.RESULT_OK || Common.getKeyMap() == null) {
             statusText.setText("No se pudo autenticar el sector con las keys disponibles.");
             return;
@@ -274,39 +251,75 @@ public class EasyMode extends BasicActivity {
 
         new Thread(() -> {
             SparseArray<String[]> dump = reader.readAsMuchAsPossible(Common.getKeyMap());
+            byte[] uid = Common.getUID() == null ? null : Common.getUID().clone();
             reader.close();
-            handler.post(() -> showBalanceFromDump(dump));
+            handler.post(() -> showBalanceFromDump(dump, uid));
         }).start();
     }
 
-    private void showBalanceFromDump(SparseArray<String[]> dump) {
+    private void showBalanceFromDump(SparseArray<String[]> dump, byte[] uid) {
+        resetCachedBalance();
         if (dump == null) {
             statusText.setText("La tarjeta se retiró durante la lectura.");
             return;
         }
         String[] sector = dump.get(BALANCE_SECTOR);
-        if (sector == null || BALANCE_LINE < 0 || BALANCE_LINE >= sector.length) {
+        if (sector == null || sector.length <= BALANCE_BLOCK_B) {
             statusText.setText("El sector 4 no se pudo leer con las keys seleccionadas.");
             return;
         }
 
-        String hexLine = sector[BALANCE_LINE];
+        String hexA = sector[BALANCE_BLOCK_A];
+        String hexB = sector[BALANCE_BLOCK_B];
+        if (!Common.isValueBlock(hexA) || !Common.isValueBlock(hexB)) {
+            statusText.setText("El perfil no coincide: los bloques 16 y 17 no son Value Blocks válidos.");
+            return;
+        }
+
         try {
-            byte[] block = hexToBytes(hexLine);
-            displayedCents = decodeUnsigned(block, BALANCE_OFFSET, BALANCE_LENGTH,
-                    BALANCE_LITTLE_ENDIAN);
-            balanceText.setText(String.format(Locale.getDefault(), "%.2f €", displayedCents / 100.0));
-            technicalText.setText("Sector " + BALANCE_SECTOR
-                    + " · línea " + (BALANCE_LINE + 1)
-                    + " · HEX " + selectedHex(block, BALANCE_OFFSET, BALANCE_LENGTH));
+            byte[] blockA = hexToBytes(hexA);
+            byte[] blockB = hexToBytes(hexB);
+            int valueA = decodeValueBlock(blockA);
+            int valueB = decodeValueBlock(blockB);
+            if (valueA < 0 || valueB < 0) {
+                statusText.setText("El perfil de saldo no admite valores negativos.");
+                return;
+            }
+            if (valueA != valueB) {
+                statusText.setText("Las dos copias del saldo no coinciden. Usa Modo avanzado.");
+                technicalText.setText("Bloque 16: " + valueA + " · Bloque 17: " + valueB);
+                balancePanel.setVisibility(View.VISIBLE);
+                editButton.setEnabled(false);
+                return;
+            }
+
+            displayedCents = valueA;
+            originalBlockA = blockA;
+            originalBlockB = blockB;
+            lastReadUid = uid;
+            balanceText.setText(formatEuros(displayedCents));
+            technicalText.setText("Sector 4 · bloques 16 y 17 · Value Block verificado");
             balancePanel.setVisibility(View.VISIBLE);
+            editButton.setEnabled(true);
             statusText.setText("Tarjeta leída correctamente");
         } catch (IllegalArgumentException ex) {
-            statusText.setText("No se pudo interpretar el campo configurado como saldo.");
+            statusText.setText("No se pudo interpretar el saldo del perfil de laboratorio.");
         }
     }
 
-    private void showTestBalanceEditor() {
+    private void resetCachedBalance() {
+        originalBlockA = null;
+        originalBlockB = null;
+        lastReadUid = null;
+        editButton.setEnabled(false);
+    }
+
+    private void showBalanceEditor() {
+        if (originalBlockA == null || originalBlockB == null || lastReadUid == null) {
+            Toast.makeText(this, "Lee primero la tarjeta.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         EditText input = new EditText(this);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
                 | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
@@ -315,17 +328,17 @@ public class EasyMode extends BasicActivity {
         input.setPadding(pad, pad, pad, pad);
 
         new AlertDialog.Builder(this)
-                .setTitle("Saldo de prueba")
-                .setMessage("Esta pantalla solo cambia la vista local. No escribe el saldo de una tarjeta NFC real.")
+                .setTitle("Nuevo saldo")
+                .setMessage("Tarjeta de laboratorio: mantén la misma tarjeta junto al móvil durante la escritura.")
                 .setView(input)
                 .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton("Aplicar", (dialog, which) -> {
+                .setPositiveButton("Escribir", (dialog, which) -> {
                     try {
-                        double euros = Double.parseDouble(input.getText().toString().replace(',', '.'));
-                        if (euros < 0) throw new NumberFormatException();
-                        displayedCents = Math.round(euros * 100.0);
-                        balanceText.setText(String.format(Locale.getDefault(), "%.2f €", displayedCents / 100.0));
-                        technicalText.setText("Vista local de prueba · tarjeta sin modificar");
+                        String normalized = input.getText().toString().trim().replace(',', '.');
+                        double euros = Double.parseDouble(normalized);
+                        long cents = Math.round(euros * 100.0);
+                        if (euros < 0 || cents > Integer.MAX_VALUE) throw new NumberFormatException();
+                        confirmAndWriteBalance((int) cents);
                     } catch (NumberFormatException e) {
                         Toast.makeText(this, "Introduce un importe válido.", Toast.LENGTH_LONG).show();
                     }
@@ -333,8 +346,158 @@ public class EasyMode extends BasicActivity {
                 .show();
     }
 
+    private void confirmAndWriteBalance(int newCents) {
+        new AlertDialog.Builder(this)
+                .setTitle("Confirmar escritura")
+                .setMessage("Cambiar " + formatEuros(displayedCents) + " por "
+                        + formatEuros(newCents) + " en los dos Value Blocks del perfil de laboratorio?")
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton("Confirmar", (dialog, which) -> writeBalanceToLabTag(newCents))
+                .show();
+    }
+
+    private void writeBalanceToLabTag(int newCents) {
+        final byte[] beforeA = originalBlockA.clone();
+        final byte[] beforeB = originalBlockB.clone();
+        final byte[] expectedA = makeValueBlock(newCents, beforeA[12]);
+        final byte[] expectedB = makeValueBlock(newCents, beforeB[12]);
+        final byte[] expectedUid = lastReadUid.clone();
+
+        statusText.setText("Escribiendo saldo… no retires la tarjeta.");
+        editButton.setEnabled(false);
+
+        new Thread(() -> {
+            MCReader reader = Common.checkForTagAndCreateReader(this);
+            if (reader == null) {
+                handler.post(() -> writeFailed("No se detecta la tarjeta. Acércala y vuelve a leerla."));
+                return;
+            }
+
+            byte[] currentUid = Common.getUID();
+            if (currentUid == null || !Arrays.equals(expectedUid, currentUid)) {
+                reader.close();
+                handler.post(() -> writeFailed("La tarjeta detectada no es la misma que se leyó."));
+                return;
+            }
+
+            SparseArray<byte[][]> keyMap = Common.getKeyMap();
+            byte[][] keys = keyMap == null ? null : keyMap.get(BALANCE_SECTOR);
+            if (keys == null) {
+                reader.close();
+                handler.post(() -> writeFailed("No están disponibles las keys del sector 4."));
+                return;
+            }
+
+            int resultA = writeWithMappedKeys(reader, BALANCE_SECTOR, BALANCE_BLOCK_A, expectedA, keys);
+            if (resultA != 0) {
+                reader.close();
+                handler.post(() -> writeFailed("No se pudo escribir el bloque 16 (código " + resultA + ")."));
+                return;
+            }
+
+            int resultB = writeWithMappedKeys(reader, BALANCE_SECTOR, BALANCE_BLOCK_B, expectedB, keys);
+            if (resultB != 0) {
+                // Best-effort rollback of block 16 to avoid leaving duplicate copies inconsistent.
+                writeWithMappedKeys(reader, BALANCE_SECTOR, BALANCE_BLOCK_A, beforeA, keys);
+                reader.close();
+                handler.post(() -> writeFailed("No se pudo escribir el bloque 17. Se intentó restaurar el bloque 16."));
+                return;
+            }
+
+            SparseArray<String[]> verifyDump = reader.readAsMuchAsPossible(keyMap);
+            reader.close();
+
+            boolean verified = verifyValueBlocks(verifyDump, expectedA, expectedB, newCents);
+            if (!verified) {
+                handler.post(() -> writeFailed("La escritura terminó, pero la verificación no coincide. Usa Modo avanzado antes de continuar."));
+                return;
+            }
+
+            handler.post(() -> {
+                displayedCents = newCents;
+                originalBlockA = expectedA;
+                originalBlockB = expectedB;
+                balanceText.setText(formatEuros(displayedCents));
+                technicalText.setText("Sector 4 · bloques 16 y 17 · escritura verificada");
+                statusText.setText("Saldo actualizado y verificado correctamente");
+                editButton.setEnabled(true);
+            });
+        }).start();
+    }
+
+    private void writeFailed(String message) {
+        statusText.setText(message);
+        editButton.setEnabled(true);
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    /** Returns 0 on success, otherwise the most useful MCReader write error code. */
+    private int writeWithMappedKeys(MCReader reader, int sector, int block,
+                                    byte[] data, byte[][] keys) {
+        int lastResult = 4; // authentication failed / no usable key
+        if (keys.length > 1 && keys[1] != null) {
+            lastResult = reader.writeBlock(sector, block, data, keys[1], true);
+            if (lastResult == 0) return 0;
+        }
+        if (keys.length > 0 && keys[0] != null) {
+            lastResult = reader.writeBlock(sector, block, data, keys[0], false);
+            if (lastResult == 0) return 0;
+        }
+        return lastResult;
+    }
+
+    private boolean verifyValueBlocks(SparseArray<String[]> dump,
+                                      byte[] expectedA, byte[] expectedB, int cents) {
+        if (dump == null) return false;
+        String[] sector = dump.get(BALANCE_SECTOR);
+        if (sector == null || sector.length <= BALANCE_BLOCK_B) return false;
+        try {
+            if (!Common.isValueBlock(sector[BALANCE_BLOCK_A])
+                    || !Common.isValueBlock(sector[BALANCE_BLOCK_B])) return false;
+            byte[] actualA = hexToBytes(sector[BALANCE_BLOCK_A]);
+            byte[] actualB = hexToBytes(sector[BALANCE_BLOCK_B]);
+            return Arrays.equals(actualA, expectedA)
+                    && Arrays.equals(actualB, expectedB)
+                    && decodeValueBlock(actualA) == cents
+                    && decodeValueBlock(actualB) == cents;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static int decodeValueBlock(byte[] block) {
+        if (block == null || block.length != 16) {
+            throw new IllegalArgumentException("Expected 16-byte Value Block");
+        }
+        return (block[0] & 0xFF)
+                | ((block[1] & 0xFF) << 8)
+                | ((block[2] & 0xFF) << 16)
+                | ((block[3] & 0xFF) << 24);
+    }
+
+    private static byte[] makeValueBlock(int value, byte address) {
+        byte[] out = new byte[16];
+        out[0] = (byte) (value & 0xFF);
+        out[1] = (byte) ((value >>> 8) & 0xFF);
+        out[2] = (byte) ((value >>> 16) & 0xFF);
+        out[3] = (byte) ((value >>> 24) & 0xFF);
+        out[4] = (byte) ~out[0];
+        out[5] = (byte) ~out[1];
+        out[6] = (byte) ~out[2];
+        out[7] = (byte) ~out[3];
+        out[8] = out[0];
+        out[9] = out[1];
+        out[10] = out[2];
+        out[11] = out[3];
+        out[12] = address;
+        out[13] = (byte) ~address;
+        out[14] = address;
+        out[15] = (byte) ~address;
+        return out;
+    }
+
     private static byte[] hexToBytes(String value) {
-        String hex = value.replaceAll("[^0-9A-Fa-f]", "");
+        String hex = value == null ? "" : value.replaceAll("[^0-9A-Fa-f]", "");
         if (hex.length() != 32) {
             throw new IllegalArgumentException("Expected one 16-byte block");
         }
@@ -345,24 +508,7 @@ public class EasyMode extends BasicActivity {
         return out;
     }
 
-    private static long decodeUnsigned(byte[] data, int offset, int length, boolean littleEndian) {
-        if (length < 1 || length > 4 || offset < 0 || offset + length > data.length) {
-            throw new IllegalArgumentException("Invalid balance range");
-        }
-        long value = 0;
-        for (int i = 0; i < length; i++) {
-            int source = littleEndian ? offset + i : offset + (length - 1 - i);
-            value |= ((long) data[source] & 0xFFL) << (8 * i);
-        }
-        return value;
-    }
-
-    private static String selectedHex(byte[] data, int offset, int length) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < length; i++) {
-            if (i > 0) sb.append(' ');
-            sb.append(String.format(Locale.US, "%02X", data[offset + i] & 0xFF));
-        }
-        return sb.toString();
+    private static String formatEuros(long cents) {
+        return String.format(Locale.getDefault(), "%.2f €", cents / 100.0);
     }
 }
